@@ -1,89 +1,151 @@
 using System;
+using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
-public class GameManager : MonoBehaviour
+public class GameManager : NetworkBehaviour
 {
-    // Pattern Singleton: permette di accedere al GameManager da qualsiasi altro script
     public static GameManager Instance { get; private set; }
 
-    public Board GameBoard { get; private set; }
-    public CellState CurrentTurn { get; private set; }
-    public bool IsGameOver { get; private set; }
+    public NetworkVariable<int> CurrentTurnIndex = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    
+    public NetworkVariable<bool> IsGameOver = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    // Pattern Observer (Eventi): avvisano la grafica e la UI senza "conoscerle" direttamente
+    public Board Board { get; private set; }
+
     public event Action<int, CellState> OnMoveMade;
-    public event Action<CellState> OnGameEnded; // Se passa CellState.Empty è un pareggio
+    public event Action<CellState> OnGameEnded;
     public event Action OnGameRestarted;
+
+    [Header("Riferimenti Pedine O")]
+    public GameObject[] oPieces; 
 
     private void Awake()
     {
-
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        
-        GameBoard = new Board();
+        Board = new Board();
     }
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
-        StartGame();
+        if (IsServer)
+        {
+            // FONDAMENTALE: Usiamo solo OnLoadEventCompleted. 
+            // OnClientConnectedCallback era troppo veloce per il Relay!
+            NetworkManager.Singleton.SceneManager.OnLoadEventCompleted += OnSceneLoaded;
+        }
+        
+        CurrentTurnIndex.OnValueChanged += OnTurnChanged;
+        IsGameOver.OnValueChanged += OnGameOverChanged;
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        if (IsServer && NetworkManager.Singleton != null && NetworkManager.Singleton.SceneManager != null)
+        {
+            NetworkManager.Singleton.SceneManager.OnLoadEventCompleted -= OnSceneLoaded;
+        }
+        CurrentTurnIndex.OnValueChanged -= OnTurnChanged;
+        IsGameOver.OnValueChanged -= OnGameOverChanged;
+    }
+
+    // Questo metodo ora riceve la lista dei client che hanno FINITO di caricare
+    private void OnSceneLoaded(string sceneName, LoadSceneMode loadSceneMode, List<ulong> clientsCompleted, List<ulong> clientsTimedOut)
+    {
+        // Assicurati che il nome della scena sia identico a quello nelle Build Settings (es. "Game")
+        if (sceneName == "Game" && IsServer)
+        {
+            Debug.Log("Server: Scena caricata. Avvio gioco e assegno pedine.");
+            StartGame();
+
+            foreach (ulong clientId in clientsCompleted)
+            {
+                // Se non è l'Host, gli diamo le pedine O
+                if (clientId != NetworkManager.ServerClientId)
+                {
+                    AssignPiecesToClient(clientId);
+                }
+            }
+        }
+    }
+
+    private void AssignPiecesToClient(ulong clientId)
+    {
+        Debug.Log($"Assegnazione Ownership pedine O al Client: {clientId}");
+        foreach (var piece in oPieces)
+        {
+            if (piece != null)
+            {
+                var netObj = piece.GetComponent<NetworkObject>();
+                if (netObj != null)
+                {
+                    // Ora funziona perché il client è sicuramente "dentro" la scena
+                    netObj.ChangeOwnership(clientId);
+                }
+            }
+        }
     }
 
     public void StartGame()
     {
-        GameBoard.ResetBoard();
-        CurrentTurn = CellState.X; // Inizia sempre la X
-        IsGameOver = false;
-        
-        // "Spara" l'evento per dire a tutti che il gioco è ricominciato
+        Board.ResetBoard();
+        CurrentTurnIndex.Value = 0;
+        IsGameOver.Value = false;
         OnGameRestarted?.Invoke();
-        Debug.Log("Gioco Iniziato! Turno di: " + CurrentTurn);
+        Debug.Log("Gioco iniziato! Turno di: X (Host)");
     }
 
-    // Questo è il metodo che chiamerà il Mouse (e in futuro MediaPipe!)
-    public void PlayMove(int cellIndex)
+    [Rpc(SendTo.Server)]
+    public void PlayMoveRpc(int cellIndex)
     {
-        if (IsGameOver) return;
+        if (IsGameOver.Value) return;
 
-        // Chiediamo alla scacchiera se la mossa è valida matematicamente
-        if (GameBoard.TryMakeMove(cellIndex, CurrentTurn))
+        CellState currentMark = CurrentTurnIndex.Value == 0 ? CellState.X : CellState.O;
+
+        if (Board.TryMakeMove(cellIndex, currentMark))
         {
-            // Se la mossa è valida, avvisiamo la grafica di disegnare la X o la O
-            OnMoveMade?.Invoke(cellIndex, CurrentTurn);
-
+            UpdateVisualsRpc(cellIndex, (int)currentMark);
             CheckGameState();
         }
-        else
-        {
-            Debug.LogWarning("Mossa non valida nella cella: " + cellIndex);
-        }
+    }
+
+    [Rpc(SendTo.ClientsAndHost)]
+    private void UpdateVisualsRpc(int cellIndex, int markIndex)
+    {
+        OnMoveMade?.Invoke(cellIndex, (CellState)markIndex);
     }
 
     private void CheckGameState()
     {
-        CellState winner = GameBoard.CheckWinner();
-
+        CellState winner = Board.CheckWinner();
         if (winner != CellState.Empty)
         {
-            IsGameOver = true;
-            Debug.Log("Partita finita! Ha vinto: " + winner);
-            OnGameEnded?.Invoke(winner);
+            IsGameOver.Value = true;
+            GameEndedRpc((int)winner);
         }
-        else if (GameBoard.IsBoardFull())
+        else if (Board.IsBoardFull())
         {
-            IsGameOver = true;
-            Debug.Log("Partita finita! Pareggio!");
-            OnGameEnded?.Invoke(CellState.Empty);
+            IsGameOver.Value = true;
+            GameEndedRpc((int)CellState.Empty);
         }
         else
         {
-            // Nessuno ha vinto, la griglia non è piena: si cambia turno!
-            CurrentTurn = (CurrentTurn == CellState.X) ? CellState.O : CellState.X;
-            Debug.Log("Turno passato. Ora tocca a: " + CurrentTurn);
+            CurrentTurnIndex.Value = CurrentTurnIndex.Value == 0 ? 1 : 0;
         }
     }
+
+    [Rpc(SendTo.ClientsAndHost)]
+    private void GameEndedRpc(int winnerIndex)
+    {
+        CellState winner = (CellState)winnerIndex;
+        OnGameEnded?.Invoke(winner);
+        Debug.Log(winner == CellState.Empty ? "Pareggio!" : "Ha vinto: " + winner);
+    }
+
+    private void OnTurnChanged(int previous, int current) => Debug.Log("Turno: " + (current == 0 ? "X" : "O"));
+    private void OnGameOverChanged(bool previous, bool current) { if (current) Debug.Log("Partita finita!"); }
 }

@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 
 public class DraggablePiece : Grabbable
@@ -9,12 +10,12 @@ public class DraggablePiece : Grabbable
     private Quaternion startRotation;
     private bool isDragged = false;
     private Vector3 currentTargetPosition;
-    private Rigidbody rb; // AGGIUNTO
+    private Rigidbody rb;
 
     private void Awake()
     {
-        rb = GetComponent<Rigidbody>(); // AGGIUNTO
-        rb.useGravity = false; // AGGIUNTO
+        rb = GetComponent<Rigidbody>();
+        rb.useGravity = false;
     }
 
     private void Start()
@@ -24,20 +25,23 @@ public class DraggablePiece : Grabbable
     }
 
     private void Update()
-{
-    if (isDragged)
     {
-        transform.position = Vector3.Lerp(transform.position, currentTargetPosition, 15f * Time.deltaTime);
-        transform.Rotate(Vector3.up, 90f * Time.deltaTime); // AGGIUNTO
+        if (isDragged)
+        {
+            transform.position = Vector3.Lerp(transform.position, currentTargetPosition, 15f * Time.deltaTime);
+            transform.Rotate(Vector3.up, 90f * Time.deltaTime);
+        }
     }
-}
 
     public override void StartDrag()
-    {
-        isDragged = true;
-        rb.useGravity = false; // MODIFICATO
-        rb.linearVelocity = Vector3.zero; // AGGIUNTO
-    }
+{
+    isDragged = true;
+    rb.useGravity = false;
+    rb.isKinematic = true; // Impedisce al pezzo di bloccarsi contro il tavolo
+    rb.linearVelocity = Vector3.zero;
+}
+
+
 
     public override void UpdateTarget(Vector3 targetPosition)
     {
@@ -45,10 +49,13 @@ public class DraggablePiece : Grabbable
     }
 
     public override void StopDrag()
-    {
-        isDragged = false;
-        CheckDropLocation();
-    }
+{
+    isDragged = false;
+    rb.isKinematic = false; // <--- Torna a essere un oggetto fisico per cadere nella cella
+    rb.useGravity = true;
+    transform.rotation = Quaternion.identity;
+    CheckDropLocation();
+}
 
     public override bool IsPinchable()
     {
@@ -57,7 +64,16 @@ public class DraggablePiece : Grabbable
 
     private void OnMouseDown()
     {
-        Debug.Log("CLICK RICEVUTO sulla pedina: " + gameObject.name);
+        bool isMyTurn;
+        if (NetworkManager.Singleton.IsHost)
+            isMyTurn = GameManager.Instance.CurrentTurnIndex.Value == 0;
+        else
+            isMyTurn = GameManager.Instance.CurrentTurnIndex.Value == 1;
+
+        if (GameManager.Instance.IsGameOver.Value) return;
+        if (!isMyTurn) return;
+        if (pieceType != (NetworkManager.Singleton.IsHost ? CellState.X : CellState.O)) return;
+
         StartDrag();
     }
 
@@ -77,20 +93,46 @@ public class DraggablePiece : Grabbable
     }
 
     private void CheckDropLocation()
+{
+    RaycastHit hit;
+    
+    // Spariamo il raggio verso il basso
+    if (Physics.Raycast(transform.position, Vector3.down, out hit, 5f))
     {
-        RaycastHit hit;
-        if (Physics.Raycast(transform.position, Vector3.down, out hit, 5f))
+        DropZone cell = hit.collider.GetComponent<DropZone>();
+
+        // 1. Controllo: Abbiamo colpito una cella? 
+        // 2. Controllo: La cella è vuota nella logica del Board?
+        if (cell != null && GameManager.Instance.Board.Grid[cell.cellIndex] == CellState.Empty)
         {
-            DropZone cell = hit.collider.GetComponent<DropZone>();
-            if (cell != null)
-            {
-                rb.useGravity = true; // MODIFICATO
-                GameManager.Instance.PlayMove(cell.cellIndex);
-                return;
-            }
+            // Se è tutto OK, procediamo con lo snapping
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+
+            // Centra il pezzo sulla cella (X e Z)
+            Vector3 snapPosition = new Vector3(
+                cell.transform.position.x, 
+                transform.position.y, 
+                cell.transform.position.z
+            );
+            transform.position = snapPosition;
+            transform.rotation = Quaternion.identity;
+
+            rb.useGravity = true;
+            rb.isKinematic = false;
+
+            // Comunica la mossa al server
+            GameManager.Instance.PlayMoveRpc(cell.cellIndex);
+            return; // Esci dal metodo: mossa completata!
         }
-        ReturnToStart();
     }
+
+    // --- USCITA DI EMERGENZA ---
+    // Se il raggio non ha colpito nulla, o ha colpito un'altra pedina,
+    // o la cella era occupata... il codice arriverà qui sotto.
+    Debug.Log("Mossa non valida (cella occupata o fuori scacchiera). Torno all'inizio.");
+    ReturnToStart();
+}
 
     public void ReturnToStart()
     {
