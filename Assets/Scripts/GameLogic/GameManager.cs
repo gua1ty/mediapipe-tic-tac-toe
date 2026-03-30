@@ -92,10 +92,8 @@ public class GameManager : NetworkBehaviour
 
     public void StartGame()
     {
-        Board.ResetBoard();
-        CurrentTurnIndex.Value = 0;
-        IsGameOver.Value = false;
-        OnGameRestarted?.Invoke();
+        // Usa la stessa logica del rematch, così siamo sicuri che tutto si sincronizzi
+        RequestRematch(); 
         Debug.Log("Gioco iniziato! Turno di: X (Host)");
     }
 
@@ -144,6 +142,29 @@ public class GameManager : NetworkBehaviour
         CellState winner = (CellState)winnerIndex;
         OnGameEnded?.Invoke(winner);
         Debug.Log(winner == CellState.Empty ? "Pareggio!" : "Ha vinto: " + winner);
+    }
+
+    public void RequestRematch()
+    {
+        if (!IsServer) return; // Sicurezza: solo l'Host può farlo
+
+        // 1. Puliamo la logica (che esiste solo sul Server)
+        Board.ResetBoard();
+        CurrentTurnIndex.Value = 0;
+        IsGameOver.Value = false;
+
+        // 2. Urliamo a TUTTI i computer connessi di resettare la loro grafica
+        RestartGameVisualsRpc();
+    }
+
+    // Questo [Rpc] viaggia su internet e viene eseguito sui computer di tutti
+    [Rpc(SendTo.ClientsAndHost)]
+    private void RestartGameVisualsRpc()
+    {
+        Debug.Log("Reset grafico ricevuto! Pulisco il tavolo...");
+        
+        // Lanciamo l'evento! La UI lo sentirà e rimetterà "Turno X"
+        OnGameRestarted?.Invoke(); 
     }
 
     private void OnTurnChanged(int previous, int current) => Debug.Log("Turno: " + (current == 0 ? "X" : "O"));

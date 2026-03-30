@@ -22,6 +22,12 @@ public class DraggablePiece : Grabbable
     {
         startPosition = transform.position;
         startRotation = transform.rotation;
+
+        // NUOVO: Mi metto in ascolto dell'Arbitro (GameManager)
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.OnGameRestarted += ReturnToStart;
+        }
     }
 
     private void Update()
@@ -140,5 +146,17 @@ public class DraggablePiece : Grabbable
         rb.linearVelocity = Vector3.zero;
         transform.position = startPosition;
         transform.rotation = startRotation;
+    }
+
+    // NUOVO: Tolgo le cuffie quando la pedina viene distrutta
+    public void OnDestroy()
+    {
+        // 1. Facciamo fare la pulizia di base a Netcode
+
+        // 2. Facciamo la nostra pulizia personalizzata
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.OnGameRestarted -= ReturnToStart;
+        }
     }
 }

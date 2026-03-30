@@ -20,6 +20,9 @@ public class ConnectionManager : NetworkBehaviour
     public event Action<string> OnJoinCodeGenerated;
     private UnityTransport _transport;
 
+    public event Action OnClientConnecting;
+    public event Action OnClientConnectionFailed;
+
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -69,6 +72,8 @@ public class ConnectionManager : NetworkBehaviour
         string code = joinCodeInputField.text.Trim().ToUpper();
         if (code.Length != 6) return;
 
+        OnClientConnecting?.Invoke();
+
         try
         {
             JoinAllocation allocation = await RelayService.Instance.JoinAllocationAsync(code);
@@ -76,15 +81,31 @@ public class ConnectionManager : NetworkBehaviour
             _transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, "dtls"));
             NetworkManager.Singleton.StartClient();
         }
-        catch (Exception e) { Debug.LogError("Errore Client: " + e.Message); }
+        catch (Exception e) { 
+        
+        Debug.LogError("Errore Client: " + e.Message); 
+        OnClientConnectionFailed?.Invoke();
+
+    }
     }
 
-    private void OnClientConnected(ulong clientId)
+    // Aggiungi "async" perché useremo un piccolo timer
+    private async void OnClientConnected(ulong clientId)
     {
-        // Solo l'Host decide quando cambiare scena
+        // Controlliamo se siamo l'Host e se chi si è connesso NON siamo noi stessi
         if (IsServer && clientId != NetworkManager.ServerClientId)
         {
-            Debug.Log("Client connesso! Cambio scena...");
+            Debug.Log("Client connesso! Mostro caricamento e preparo la scena...");
+            
+            // 1. Accendiamo la schermata di caricamento per l'Host!
+            // Riutilizziamo l'evento che attiva il ConnectionMenu
+            OnClientConnecting?.Invoke(); 
+
+            // 2. Aspettiamo 1.5 secondi (ritardo cinematografico)
+            // Questo dà il tempo di leggere "Connecting..." o "Player Found!"
+            await System.Threading.Tasks.Task.Delay(1500);
+
+            // 3. Ora cambiamo scena per tutti
             NetworkManager.Singleton.SceneManager.LoadScene("Game", UnityEngine.SceneManagement.LoadSceneMode.Single);
         }
     }
