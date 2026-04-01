@@ -30,6 +30,8 @@ public class GameManager : NetworkBehaviour
         Board = new Board();
     }
 
+    
+
     public override void OnNetworkSpawn()
     {
         if (IsServer)

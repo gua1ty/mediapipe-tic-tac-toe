@@ -65,24 +65,29 @@ public class DraggablePiece : Grabbable
 
     public override bool IsPinchable()
     {
+        // 1. Il gioco è finito?
+        if (GameManager.Instance.IsGameOver.Value) return false;
+
+        // 2. È il mio turno?
+        bool isMyTurn = NetworkManager.Singleton.IsHost ? 
+            GameManager.Instance.CurrentTurnIndex.Value == 0 : 
+            GameManager.Instance.CurrentTurnIndex.Value == 1;
+        if (!isMyTurn) return false;
+
+        // 3. È la mia pedina? (Host usa X, Client usa O)
+        if (pieceType != (NetworkManager.Singleton.IsHost ? CellState.X : CellState.O)) return false;
+
         return true;
     }
 
     private void OnMouseDown()
     {
-        bool isMyTurn;
-        if (NetworkManager.Singleton.IsHost)
-            isMyTurn = GameManager.Instance.CurrentTurnIndex.Value == 0;
-        else
-            isMyTurn = GameManager.Instance.CurrentTurnIndex.Value == 1;
-
-        if (GameManager.Instance.IsGameOver.Value) return;
-        if (!isMyTurn) return;
-        if (pieceType != (NetworkManager.Singleton.IsHost ? CellState.X : CellState.O)) return;
-
-        StartDrag();
+        // Ora il mouse chiede il permesso alla stessa funzione che userà la mano!
+        if (IsPinchable()) 
+        {
+            StartDrag();
+        }
     }
-
     private void OnMouseDrag()
     {
         Plane dragPlane = new Plane(Vector3.up, transform.position);

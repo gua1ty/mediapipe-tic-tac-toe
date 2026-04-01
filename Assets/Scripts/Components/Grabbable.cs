@@ -1,9 +1,10 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
 /// An interface that allows objects to be picked up by a Mediapipe HandController.
 /// </summary>
-public abstract class Grabbable : MonoBehaviour
+public abstract class Grabbable : NetworkBehaviour
 {
     public abstract void StartDrag();
 
