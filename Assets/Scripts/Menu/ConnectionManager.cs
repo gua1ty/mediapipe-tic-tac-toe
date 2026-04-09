@@ -21,28 +21,46 @@ public class ConnectionManager : NetworkBehaviour
     private UnityTransport _transport;
 
     public event Action OnClientConnecting;
+    
+    public event Action OnHostClicked;
+
     public event Action OnClientConnectionFailed;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
+        // Niente più DontDestroyOnLoad! 
+        // Lasciamo che questo script muoia e rinasca con la scena Menu,
+        // così si collegherà sempre ai bottoni freschi appena creati.
+        Instance = this; 
     }
 
     private async void Start()
     {
-        // 1. Inizializzazione Servizi (Una volta sola)
-        await UnityServices.InitializeAsync();
+        // 1. Inizializzazione Servizi (PROTETTA!)
+        if (UnityServices.State == ServicesInitializationState.Uninitialized)
+        {
+            await UnityServices.InitializeAsync();
+        }
+
         if (!AuthenticationService.Instance.IsSignedIn)
         {
             await AuthenticationService.Instance.SignInAnonymouslyAsync();
         }
 
+        // Se torniamo dal gioco, NetworkManager potrebbe metterci un decimo di secondo a ricrearsi
+        if (NetworkManager.Singleton == null)
+        {
+            Debug.LogWarning("NetworkManager non trovato, assicurati che sia nella scena Menu!");
+            return;
+        }
+
         _transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
 
-        // 2. Setup Bottoni
+        // 2. Setup Bottoni (Ora si collegano ai bottoni veri, non ai fantasmi!)
+        hostButton.onClick.RemoveAllListeners(); // Pulizia di sicurezza
         hostButton.onClick.AddListener(StartHostRelay);
+        
+        connectButton.onClick.RemoveAllListeners();
         connectButton.onClick.AddListener(StartClientRelay);
 
         // 3. Setup Eventi Rete
@@ -50,7 +68,11 @@ public class ConnectionManager : NetworkBehaviour
     }
 
     private async void StartHostRelay()
+
     {
+        
+        OnHostClicked?.Invoke();
+
         try
         {
             // Crea stanza per 2 persone (1 ospite + 1 host)

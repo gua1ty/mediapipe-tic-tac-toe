@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -19,9 +20,23 @@ public class GameManager : NetworkBehaviour
     public event Action<int, CellState> OnMoveMade;
     public event Action<CellState> OnGameEnded;
     public event Action OnGameRestarted;
+    public event Action OnOpponentDisconnected;
 
     [Header("Riferimenti Pedine O")]
     public GameObject[] oPieces; 
+
+    private int startingTurnIndex = 0;
+
+    public bool isExiting = false;
+
+    public NetworkVariable<int> XWins = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<int> OWins = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<int> Draws = new NetworkVariable<int>(
+        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+
 
     private void Awake()
     {
@@ -36,13 +51,13 @@ public class GameManager : NetworkBehaviour
     {
         if (IsServer)
         {
-            // FONDAMENTALE: Usiamo solo OnLoadEventCompleted. 
             // OnClientConnectedCallback era troppo veloce per il Relay!
             NetworkManager.Singleton.SceneManager.OnLoadEventCompleted += OnSceneLoaded;
         }
         
         CurrentTurnIndex.OnValueChanged += OnTurnChanged;
         IsGameOver.OnValueChanged += OnGameOverChanged;
+        NetworkManager.Singleton.OnClientDisconnectCallback += ClientDisconnected;
     }
 
     public override void OnNetworkDespawn()
@@ -93,9 +108,19 @@ public class GameManager : NetworkBehaviour
     }
 
     public void StartGame()
+
+
     {
-        // Usa la stessa logica del rematch, così siamo sicuri che tutto si sincronizzi
-        RequestRematch(); 
+
+       startingTurnIndex = 0; // La prima partita in assoluto la inizia sempre X
+        CurrentTurnIndex.Value = startingTurnIndex;
+        
+        IsGameOver.Value = false;
+        Board.ResetBoard();
+        
+        // Urliamo a tutti di resettare la grafica per iniziare
+        RestartGameVisualsRpc(); 
+        
         Debug.Log("Gioco iniziato! Turno di: X (Host)");
     }
 
@@ -122,6 +147,10 @@ public class GameManager : NetworkBehaviour
     private void CheckGameState()
     {
         CellState winner = Board.CheckWinner();
+
+       if (winner == CellState.X) XWins.Value++;
+        else if (winner == CellState.O) OWins.Value++;
+
         if (winner != CellState.Empty)
         {
             IsGameOver.Value = true;
@@ -130,6 +159,7 @@ public class GameManager : NetworkBehaviour
         else if (Board.IsBoardFull())
         {
             IsGameOver.Value = true;
+            Draws.Value++;
             GameEndedRpc((int)CellState.Empty);
         }
         else
@@ -142,6 +172,8 @@ public class GameManager : NetworkBehaviour
     private void GameEndedRpc(int winnerIndex)
     {
         CellState winner = (CellState)winnerIndex;
+
+        
         OnGameEnded?.Invoke(winner);
         Debug.Log(winner == CellState.Empty ? "Pareggio!" : "Ha vinto: " + winner);
     }
@@ -151,8 +183,30 @@ public class GameManager : NetworkBehaviour
         if (!IsServer) return; // Sicurezza: solo l'Host può farlo
 
         // 1. Puliamo la logica (che esiste solo sul Server)
+        
+        CellState lastWinner = Board.CheckWinner();
+
+        // 2. Ora possiamo pulire la plancia
         Board.ResetBoard();
-        CurrentTurnIndex.Value = 0;
+
+        // 3. Applichiamo la tua logica per chi inizia
+        if (lastWinner == CellState.X)
+        {
+            startingTurnIndex = 1; // Ha vinto X, tocca a O
+        }
+        else if (lastWinner == CellState.O)
+        {
+            startingTurnIndex = 0; // Ha vinto O, tocca a X
+        }
+        else 
+        {
+            // Pareggio: Alterniamo. Se prima era 0 diventa 1, se era 1 diventa 0.
+            startingTurnIndex = (startingTurnIndex == 0) ? 1 : 0;
+        }
+
+        // 4. Assegniamo il nuovo turno iniziale alla variabile di rete
+        CurrentTurnIndex.Value = startingTurnIndex;
+
         IsGameOver.Value = false;
 
         // 2. Urliamo a TUTTI i computer connessi di resettare la loro grafica
@@ -167,6 +221,44 @@ public class GameManager : NetworkBehaviour
         
         // Lanciamo l'evento! La UI lo sentirà e rimetterà "Turno X"
         OnGameRestarted?.Invoke(); 
+    }
+
+    private void ClientDisconnected(ulong clientId)
+    {
+        if (isExiting) return; // Se abbiamo premuto Esci noi, ignoriamo l'allarme!
+
+        // ... qui sotto tieni il resto del tuo codice con gli if(IsServer) ...
+        if (IsServer && clientId != NetworkManager.ServerClientId)
+        {
+            Debug.Log("Il Client si è disconnesso!");
+            OnOpponentDisconnected?.Invoke(); 
+        }
+        else if (!IsServer && clientId == NetworkManager.ServerClientId)
+        {
+            Debug.Log("L'Host ha chiuso la stanza!");
+            OnOpponentDisconnected?.Invoke(); 
+        }
+    }
+    // Questo metodo può essere chiamato da chiunque (UI, input da tastiera, ecc.)
+    public void LeaveGame()
+    {
+        isExiting = true; // Segnaliamo che stiamo uscendo volontariamente!
+        StartCoroutine(ShutdownAndReturnToMenu());
+    }
+
+    private System.Collections.IEnumerator ShutdownAndReturnToMenu()
+    {
+        if (NetworkManager.Singleton != null)
+        {
+            // 1. Diamo l'ordine di spegnimento
+            NetworkManager.Singleton.Shutdown();
+            
+            // 2. MAGIA: Aspettiamo finché Netcode non ha finito di spegnersi completamente!
+            yield return new WaitWhile(() => NetworkManager.Singleton.ShutdownInProgress);
+        }
+
+        // 3. Torniamo al Menu in totale sicurezza
+        UnityEngine.SceneManagement.SceneManager.LoadScene("Menu"); 
     }
 
     private void OnTurnChanged(int previous, int current) => Debug.Log("Turno: " + (current == 0 ? "X" : "O"));

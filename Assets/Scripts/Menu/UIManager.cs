@@ -11,7 +11,7 @@ public class UIManager : MonoBehaviour
 
     [SerializeField] private GameObject ConnectionMenu;
 
-
+    [SerializeField] private GameObject GeneratingCodeMenu;
 
 
     [SerializeField] private Button copyCodeButton;
@@ -29,6 +29,8 @@ public class UIManager : MonoBehaviour
         ClientMenu.SetActive(false);
         ConnectionMenu.SetActive(false);
 
+        GeneratingCodeMenu.SetActive(false);
+
         joinButton.onClick.AddListener(ShowClientMenu);
         
         // Colleghiamo il tasto copia alla funzione
@@ -37,6 +39,8 @@ public class UIManager : MonoBehaviour
             copyCodeButton.onClick.AddListener(CopyCodeToClipboard);
         }
 
+        
+        ConnectionManager.Instance.OnHostClicked += ShowGeneratingCode;
         ConnectionManager.Instance.OnJoinCodeGenerated += ShowHostMenu;
         ConnectionManager.Instance.OnClientConnecting += ShowLoadingScreen;
         ConnectionManager.Instance.OnClientConnectionFailed += HideLoadingScreen;
@@ -45,8 +49,10 @@ public class UIManager : MonoBehaviour
     }
 
     private void ShowHostMenu(string joinCode)
+
     {
         _lastGeneratedCode = joinCode; // Memorizziamo il codice
+        GeneratingCodeMenu.SetActive(false);
         MainMenu.SetActive(false);
         HostMenu.SetActive(true);
         joinCodeText.text = joinCode;
@@ -64,6 +70,14 @@ public class UIManager : MonoBehaviour
         HostMenu.SetActive(false);
         ClientMenu.SetActive(false);
         ConnectionMenu.SetActive(true);
+    }
+
+    private void ShowGeneratingCode()
+    {
+        MainMenu.SetActive(false);
+        HostMenu.SetActive(false);
+        ClientMenu.SetActive(false);
+        GeneratingCodeMenu.SetActive(true);
     }
 
     private void HideLoadingScreen()

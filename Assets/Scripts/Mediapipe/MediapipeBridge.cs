@@ -5,6 +5,7 @@ using System;
 using System.Threading.Tasks;
 using System.Linq;
 using UnityEngine.SceneManagement;
+
 [Serializable]
 public class MpCommand
 {
@@ -13,7 +14,6 @@ public class MpCommand
 
 public class MediapipeBridge : MonoBehaviour
 {
-    // Singleton
     private static MediapipeBridge instance = null;
     public static MediapipeBridge Instance => instance;
 
@@ -22,10 +22,7 @@ public class MediapipeBridge : MonoBehaviour
         public bool close = false;
     }
 
-    // Preprocessing flags
     public bool rotation_correction = true;
-
-    // Parameters for hand correction
     public bool geometric_correction = false;
     public float lambda_rate_dist = 0.1f;
     public float lambda_rate_ang = 0.1f;
@@ -37,6 +34,8 @@ public class MediapipeBridge : MonoBehaviour
 
     private RequestsThread requestsThread;
     private bool mediapipeProcessStarted = false;
+    
+    private System.Diagnostics.Process mpProcess; 
 
     public MpCommand mp_message = new MpCommand();
     public bool connectionOk = false;
@@ -61,51 +60,81 @@ public class MediapipeBridge : MonoBehaviour
         };
     }
 
-   // CANCELLA il vecchio private void Start() { ... }
-
-    // --- NUOVO CODICE ---
     private void OnEnable()
     {
-        // Quando il Bridge si accende, gli diciamo di fare attenzione ai cambi di scena
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
     private void OnDisable()
     {
-        // Buona pratica: smettere di ascoltare quando l'oggetto viene spento
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        // CAMBIA "Game" con il nome esatto della tua scena del tavolo (quella che hai nel Build Settings)
         if (scene.name == "Game") 
         {
             InitializeMediaPipe();
+        }
+        else if (scene.name == "Menu") // Sostituisci "Menu" con il nome esatto della tua scena!
+        {
+            ShutdownMediaPipe();
         }
     }
 
     public void InitializeMediaPipe()
     {
-        if (!mediapipeProcessStarted) 
+        if (!mediapipeProcessStarted)
         {
-            StartCoroutine(StartWithDelay());
-            Debug.Log("MediaPipe: Scena di Gioco rilevata, avvio il motore!");
+            StartCoroutine(StartupSequence());
         }
     }
-    // --------------------
 
-    private IEnumerator StartWithDelay()
+private IEnumerator StartupSequence()
     {
+        if (requestsThread == null)
+            requestsThread = new RequestsThread();
+
         StartMediapipeProcess();
-        yield return new WaitForSeconds(0f);
-        requestsThread = new RequestsThread();
+
+        // Aspettiamo 5 secondi per vedere se il Mac killa il processo per il popup
+        yield return new WaitForSeconds(5f);
+
+        bool processAlive = false;
+        try { processAlive = mpProcess != null && !mpProcess.HasExited; } catch { }
+
+        if (!processAlive)
+        {
+            // Primo avvio assoluto: è crashato per il popup, rilanciamo
+            Debug.Log("[MP] Primo avvio rilevato, rilancio...");
+            StartMediapipeProcess();
+        }
+        else
+        {
+            // Avvii successivi: era già autorizzato, non toccare nulla
+            Debug.Log("[MP] Permesso già presente, nessun rilancio necessario.");
+        }
+
         mediapipeProcessStarted = true;
     }
 
+
+
+
+    // ---------------------------------------------------------------
+
     private void Update()
     {
-        if (!mediapipeProcessStarted) return;
+        // TASTO DI EMERGENZA (Premi R se serve riavviarlo a mano)
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            Debug.LogWarning("Riavvio manuale dell'eseguibile...");
+            if (mpProcess != null && !mpProcess.HasExited) mpProcess.Kill();
+            StartMediapipeProcess();
+            return;
+        }
+
+        if (!mediapipeProcessStarted || requestsThread == null) return;
 
         string answer;
         lock (requestsThread.lockObject)
@@ -142,8 +171,33 @@ public class MediapipeBridge : MonoBehaviour
 
     private void OnApplicationQuit()
     {
-        if (mediapipeProcessStarted)
+        if (requestsThread != null) requestsThread.Stop();
+        if (mpProcess != null && !mpProcess.HasExited) mpProcess.Kill();
+    }
+
+    public void ShutdownMediaPipe()
+    {
+        Debug.Log("[MP] Spegnimento MediaPipe per ritorno al menu...");
+        
+        StopAllCoroutines(); 
+        
+        // 1. Fermiamo il thread di comunicazione
+        if (requestsThread != null) 
+        {
             requestsThread.Stop();
+            requestsThread = null;
+        }
+        
+        // 2. Killiamo il processo pesante in background (spegne la webcam)
+        if (mpProcess != null && !mpProcess.HasExited) 
+        {
+            mpProcess.Kill();
+            mpProcess.Dispose();
+            mpProcess = null;
+        }
+        
+        mediapipeProcessStarted = false;
+        ResetHandsVisibility();
     }
 
     private void ResetHandsVisibility()
@@ -184,17 +238,12 @@ public class MediapipeBridge : MonoBehaviour
     private void StartMediapipeProcess()
     {
         string logPath = Application.persistentDataPath + "/bridge_log.txt";
-
-        // 1. Il file di configurazione è direttamente in StreamingAssets/conf
         string configPath = Application.streamingAssetsPath + "/conf/config.json";
-
-        // 2. L'eseguibile dovrebbe trovarsi dentro la cartella dist. 
-        // NOTA: Se su Mac il file non ha l'estensione ".bin", rimuovila da questa stringa!
         string executablePath = Application.streamingAssetsPath + "/mediapipe-bridge-dist/mediapipe-bridge.bin";
 
         try
         {
-            System.Diagnostics.Process mpProcess = new();
+            mpProcess = new System.Diagnostics.Process();
             mpProcess.StartInfo.FileName = executablePath;
             mpProcess.StartInfo.Arguments = $"\"{configPath}\"";
             mpProcess.StartInfo.WorkingDirectory = System.IO.Path.GetDirectoryName(executablePath);
@@ -202,7 +251,6 @@ public class MediapipeBridge : MonoBehaviour
             mpProcess.Start();
 
             System.IO.File.WriteAllText(logPath, $"Executable: {executablePath}\nConfig: {configPath}\n");
-            UnityEngine.Debug.Log("Processo MediaPipe lanciato con successo!");
         }
         catch (Exception e)
         {
