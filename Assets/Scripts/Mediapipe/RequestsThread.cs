@@ -3,7 +3,6 @@ using System.Text;
 using System;
 using System.Threading;
 using UnityEngine;
-using UnityEngine;
 
 using static MediapipeBridge;
 using System.Collections.Generic;
@@ -133,11 +132,7 @@ public class RequestsThread
                 Debug.Log("Connessione fallita - socket non connesso dopo Connect()");
             }
         }
-        catch (SocketException se)
-        {
-            //Debug.LogWarning($"Errore socket durante la creazione della connessione: {se.Message} (Codice: {se.ErrorCode})");
-            CleanupConnection();
-        }
+        
         catch (Exception e)
         {
             Debug.LogError($"Errore durante la creazione del socket: {e.Message}");

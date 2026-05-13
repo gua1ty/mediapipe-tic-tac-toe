@@ -11,12 +11,18 @@ public class UIManager : MonoBehaviour
 
     [SerializeField] private GameObject ConnectionMenu;
 
+    [SerializeField] private GameObject SelectionMenu;
+
+
     [SerializeField] private GameObject GeneratingCodeMenu;
 
 
     [SerializeField] private Button copyCodeButton;
     [SerializeField] private TMPro.TMP_Text joinCodeText;
     [SerializeField] private Button joinButton;
+
+    [SerializeField] private Button hostButtonMainMenu;
+    [SerializeField] private Button avviaPartitaButton;
 
     [SerializeField] private Sprite copiedSprite; // Trascina qui l'immagine "COPIED!"
 
@@ -28,15 +34,26 @@ public class UIManager : MonoBehaviour
         HostMenu.SetActive(false);
         ClientMenu.SetActive(false);
         ConnectionMenu.SetActive(false);
+        SelectionMenu.SetActive(false);
+
 
         GeneratingCodeMenu.SetActive(false);
 
         joinButton.onClick.AddListener(ShowClientMenu);
+
+        hostButtonMainMenu.onClick.AddListener(ShowSelectionMenu);
         
         // Colleghiamo il tasto copia alla funzione
         if (copyCodeButton != null)
         {
             copyCodeButton.onClick.AddListener(CopyCodeToClipboard);
+        }
+
+        if (avviaPartitaButton != null)
+        {
+            avviaPartitaButton.onClick.AddListener(() => {
+                ConnectionManager.Instance.StartHostRelay();
+            });
         }
 
         
@@ -48,14 +65,35 @@ public class UIManager : MonoBehaviour
 
     }
 
+    public void GoBack()
+    {
+        // 1. CONTROLLO RETE "INTELLIGENTE"
+        // Se la rete è attiva (perché siamo il Client in attesa o l'Host ha già avviato)
+        // allora spegniamo tutto. Se è già spenta, non succede nulla.
+
+        // 2. CAMBIO PANNELLO
+        if (ClientMenu != null) ClientMenu.SetActive(false);
+        if (MainMenu != null) MainMenu.SetActive(true);
+        
+        Debug.Log("🔙 Ritorno al menu principale.");
+    }
+
     private void ShowHostMenu(string joinCode)
 
     {
         _lastGeneratedCode = joinCode; // Memorizziamo il codice
         GeneratingCodeMenu.SetActive(false);
         MainMenu.SetActive(false);
+        SelectionMenu.SetActive(false); // <-- AGGIUNTO QUI
         HostMenu.SetActive(true);
         joinCodeText.text = joinCode;
+    }
+
+    private void ShowSelectionMenu()
+
+    {
+        MainMenu.SetActive(false);
+        SelectionMenu.SetActive(true);
     }
 
     private void ShowClientMenu()
@@ -69,6 +107,7 @@ public class UIManager : MonoBehaviour
         MainMenu.SetActive(false);
         HostMenu.SetActive(false);
         ClientMenu.SetActive(false);
+        SelectionMenu.SetActive(false);
         ConnectionMenu.SetActive(true);
     }
 
@@ -77,6 +116,7 @@ public class UIManager : MonoBehaviour
         MainMenu.SetActive(false);
         HostMenu.SetActive(false);
         ClientMenu.SetActive(false);
+        SelectionMenu.SetActive(false);
         GeneratingCodeMenu.SetActive(true);
     }
 

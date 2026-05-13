@@ -87,7 +87,7 @@ public class HandRenderer : MonoBehaviour
             viewportX = 1.0f - viewportX;
         }
 
-        // 4. LA MAGIA: Chiediamo a Unity di trovare il punto 3D esatto nello schermo!
+        // Chiediamo a Unity di trovare il punto 3D esatto nello schermo!
         // Passiamo X e Y dello schermo, e come Z la distanza dalla telecamera
         Vector3 worldPosition = referenceCamera.ViewportToWorldPoint(new Vector3(viewportX, viewportY, handZOffset));
 
@@ -128,7 +128,7 @@ public class HandRenderer : MonoBehaviour
             {
                 SetLinePositions(lineRenderer, i);
             }
-            catch (System.Exception e)
+            catch (System.Exception )
             {
             }
         }

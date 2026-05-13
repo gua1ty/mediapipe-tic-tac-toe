@@ -13,7 +13,6 @@ public class ConnectionManager : NetworkBehaviour
     public static ConnectionManager Instance { get; private set; }
 
     [Header("UI Elements")]
-    [SerializeField] private Button hostButton;
     [SerializeField] private Button connectButton; 
     [SerializeField] private TMPro.TMP_InputField joinCodeInputField;
 
@@ -56,10 +55,7 @@ public class ConnectionManager : NetworkBehaviour
 
         _transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
 
-        // 2. Setup Bottoni (Ora si collegano ai bottoni veri, non ai fantasmi!)
-        hostButton.onClick.RemoveAllListeners(); // Pulizia di sicurezza
-        hostButton.onClick.AddListener(StartHostRelay);
-        
+       
         connectButton.onClick.RemoveAllListeners();
         connectButton.onClick.AddListener(StartClientRelay);
 
@@ -67,7 +63,9 @@ public class ConnectionManager : NetworkBehaviour
         NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
     }
 
-    private async void StartHostRelay()
+    
+
+    public async void StartHostRelay()
 
     {
         
@@ -89,7 +87,7 @@ public class ConnectionManager : NetworkBehaviour
         catch (Exception e) { Debug.LogError("Errore Host: " + e.Message); }
     }
 
-    private async void StartClientRelay()
+    public async void StartClientRelay()
     {
         string code = joinCodeInputField.text.Trim().ToUpper();
         if (code.Length != 6) return;

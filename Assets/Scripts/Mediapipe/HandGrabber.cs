@@ -14,7 +14,7 @@ public class HandGrabber : MonoBehaviour
     private Transform indexTip;  
 
     private Grabbable currentGrabbedObject = null;
-    private bool isPinching = false;
+    public bool isPinching = false;
 
     private Vector3 grabOffset = Vector3.zero;
     private bool initialized = false;

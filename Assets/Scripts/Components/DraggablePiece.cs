@@ -16,6 +16,10 @@ public class DraggablePiece : Grabbable
     {
         rb = GetComponent<Rigidbody>();
         rb.useGravity = false;
+
+        if (GetComponent<MeshRenderer>() != null) {
+        GetComponent<MeshRenderer>().enabled = false;
+    }
     }
 
     private void Start()
@@ -41,12 +45,19 @@ public class DraggablePiece : Grabbable
 
     public override void StartDrag()
 {
+    // --- NOVITÀ: GESTIONE AUTORITÀ (OWNERSHIP) ---
+    // Se siamo in Chaos e non sono il proprietario di questa pedina...
+    if (GameManager.Instance.IsChaosMode.Value && !GetComponent<NetworkObject>().IsOwner)
+    {
+        // Chiedo al Server di darmi la proprietà della pedina per poterla muovere
+        GameManager.Instance.RequestOwnershipServerRpc(GetComponent<NetworkObject>(), NetworkManager.Singleton.LocalClientId);
+    }
+
     isDragged = true;
     rb.useGravity = false;
-    rb.isKinematic = true; // Impedisce al pezzo di bloccarsi contro il tavolo
+    rb.isKinematic = true; 
     rb.linearVelocity = Vector3.zero;
 }
-
 
 
     public override void UpdateTarget(Vector3 targetPosition)
@@ -64,22 +75,24 @@ public class DraggablePiece : Grabbable
 }
 
     public override bool IsPinchable()
+{
+    // 1. Il gioco è finito o non iniziato?
+    if (GameManager.Instance.IsGameOver.Value || !GameManager.Instance.IsGameStarted.Value) return false;
+
+    // 2. È il mio turno? (Usa la proprietà che abbiamo creato nel GameManager)
+    if (!GameManager.Instance.IsMyTurnLocal) return false;
+
+    // 3. È la mia pedina? 
+    // In Modalità Chaos ignoriamo questo controllo!
+    if (!GameManager.Instance.IsChaosMode.Value)
     {
-        // 1. Il gioco è finito?
-        if (GameManager.Instance.IsGameOver.Value) return false;
-
-        // 2. È il mio turno?
-        bool isMyTurn = NetworkManager.Singleton.IsHost ? 
-            GameManager.Instance.CurrentTurnIndex.Value == 0 : 
-            GameManager.Instance.CurrentTurnIndex.Value == 1;
-        if (!isMyTurn) return false;
-
-        // 3. È la mia pedina? (Host usa X, Client usa O)
-        if (pieceType != (NetworkManager.Singleton.IsHost ? CellState.X : CellState.O)) return false;
-
-        return true;
+        // Se NON è chaos, applichiamo il controllo classico del colore
+        CellState myColor = NetworkManager.Singleton.IsHost ? CellState.X : CellState.O;
+        if (pieceType != myColor) return false;
     }
 
+    return true; // Se siamo in Chaos o se è il mio colore in Normal, procedi
+}
     private void OnMouseDown()
     {
         // Ora il mouse chiede il permesso alla stessa funzione che userà la mano!
@@ -133,7 +146,7 @@ public class DraggablePiece : Grabbable
             rb.isKinematic = false;
 
             // Comunica la mossa al server
-            GameManager.Instance.PlayMoveRpc(cell.cellIndex);
+            GameManager.Instance.PlayMoveRpc(cell.cellIndex, pieceType);
             return; // Esci dal metodo: mossa completata!
         }
     }
@@ -142,19 +155,82 @@ public class DraggablePiece : Grabbable
     // Se il raggio non ha colpito nulla, o ha colpito un'altra pedina,
     // o la cella era occupata... il codice arriverà qui sotto.
     Debug.Log("Mossa non valida (cella occupata o fuori scacchiera). Torno all'inizio.");
-    ReturnToStart();
-}
 
-    public void ReturnToStart()
+    ReturnToStart();
+
+    if (GameManager.Instance != null && GameManager.Instance.MaxLives.Value > 0)
     {
-        rb.useGravity = false;
-        rb.linearVelocity = Vector3.zero;
-        transform.position = startPosition;
-        transform.rotation = startRotation;
+        ulong myClientId = Unity.Netcode.NetworkManager.Singleton.LocalClientId;
+        GameManager.Instance.WrongMoveRpc(myClientId);
     }
 
+    
+}
+
+public void SetStartPosition(Vector3 pos, Quaternion rot)
+{
+    // AGGIORNAMENTO FONDAMENTALE: Cambiamo la casa base locale
+    this.startPosition = pos;
+    this.startRotation = rot;
+
+    // Se siamo noi a gestire il pezzo (Owner), lo muoviamo anche fisicamente
+    if (IsOwner)
+    {
+        if (rb == null) rb = GetComponent<Rigidbody>();
+        rb.isKinematic = true;
+        transform.SetPositionAndRotation(pos, rot);
+        
+        // Riattiviamo la fisica dopo un istante
+        Invoke(nameof(EnablePhysics), 0.2f);
+    }
+}
+
+public void DisablePhysics() 
+{ 
+    rb.isKinematic = true; 
+    rb.linearVelocity = Vector3.zero;
+    rb.angularVelocity = Vector3.zero;
+}
+
+public void EnablePhysics() { rb.isKinematic = false; }
+
+private System.Collections.IEnumerator TeleportAndWait(Vector3 pos, Quaternion rot)
+{
+    var col = GetComponent<Collider>();
+    
+    rb.isKinematic = true;
+    if (col != null) col.enabled = false;
+    
+    transform.SetPositionAndRotation(pos, rot);
+    rb.linearVelocity = Vector3.zero;
+    rb.angularVelocity = Vector3.zero;
+    
+    // Aspetta che tutti i pezzi siano stati posizionati e la fisica si stabilizzi
+    yield return new WaitForFixedUpdate();
+    yield return new WaitForFixedUpdate();
+    
+    rb.isKinematic = false;
+    if (col != null) col.enabled = true;
+}
+
+
+    public void ReturnToStart()
+{
+    // Assicuriamoci che sia visibile (nel caso fosse stata spenta)
+    if (GetComponent<MeshRenderer>() != null) 
+        GetComponent<MeshRenderer>().enabled = true;
+
+    if (rb != null)
+    {
+        rb.useGravity = false;
+        rb.isKinematic = true;
+        rb.linearVelocity = Vector3.zero;
+    }
+    
+    transform.SetPositionAndRotation(startPosition, startRotation);
+}
     // NUOVO: Tolgo le cuffie quando la pedina viene distrutta
-    public void OnDestroy()
+    override public void OnDestroy()
     {
         // 1. Facciamo fare la pulizia di base a Netcode
 
