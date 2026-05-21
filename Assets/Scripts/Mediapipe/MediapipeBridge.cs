@@ -237,41 +237,37 @@ private IEnumerator StartupSequence()
 
     private void StartMediapipeProcess()
     {
-        // Usiamo Path.Combine e GetFullPath per assicurarci che Windows usi i backslash (\) corretti
-        string logPath = System.IO.Path.Combine(Application.persistentDataPath, "bridge_log.txt");
-        string configPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.streamingAssetsPath, "conf", "config.json"));
-        
-        string bridgeName = Application.platform == RuntimePlatform.WindowsPlayer
-            ? "mediapipe-bridge.exe"
+        // 1. Identifichiamo dove si trova l'eseguibile e la configurazione
+        // Su Windows, il file è in Assets/Mediapipe/Mediapipe_bridge.exe
+        // Su Mac, sembra che tu stia usando il .bin (verifichiamo poi se è in StreamingAssets)
+        string bridgeName = (Application.platform == RuntimePlatform.WindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor)
+            ? "Mediapipe_bridge.exe" 
             : "mediapipe-bridge.bin";
-            
-        string executablePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.streamingAssetsPath, "mediapipe-bridge-dist", bridgeName));
+
+        // Percorso base: se siamo su Windows puntiamo a "Assets/Mediapipe", altrimenti a "StreamingAssets"
+        string folderPath = (Application.platform == RuntimePlatform.WindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor)
+            ? System.IO.Path.Combine(Application.dataPath, "Mediapipe")
+            : System.IO.Path.Combine(Application.streamingAssetsPath, "mediapipe-bridge-dist");
+
+        string executablePath = System.IO.Path.Combine(folderPath, bridgeName);
+        string configPath = System.IO.Path.Combine(folderPath, "conf", "config.json");
+        string logPath = System.IO.Path.Combine(Application.persistentDataPath, "bridge_log.txt");
 
         try
         {
             mpProcess = new System.Diagnostics.Process();
             mpProcess.StartInfo.FileName = executablePath;
-            
-            // Passiamo il percorso assoluto racchiuso rigorosamente tra virgolette
             mpProcess.StartInfo.Arguments = $"\"{configPath}\"";
-            
-            // FIX FONDAMENTALE: Impostiamo la cartella di lavoro su StreamingAssets
-            mpProcess.StartInfo.WorkingDirectory = Application.streamingAssetsPath;
-            
+            mpProcess.StartInfo.WorkingDirectory = folderPath; // Fondamentale!
             mpProcess.StartInfo.UseShellExecute = false;
-            
-            // Opzionale: decommenta la riga qui sotto se NON vuoi che appaia la finestra nera cmd di Windows
-            // mpProcess.StartInfo.CreateNoWindow = true; 
-            
             mpProcess.Start();
 
-            // Scriviamo nel log i percorsi formattati per debug
-            System.IO.File.WriteAllText(logPath, $"Executable: {executablePath}\nConfig: {configPath}\nWorkingDir: {mpProcess.StartInfo.WorkingDirectory}");
+            System.IO.File.WriteAllText(logPath, $"Avvio OK. Exe: {executablePath}\nConfig: {configPath}");
         }
         catch (Exception e)
         {
-            System.IO.File.WriteAllText(logPath, $"ERRORE: {e.Message}");
-            UnityEngine.Debug.LogError($"Errore avvio MediaPipe: {e.Message}");
+            System.IO.File.WriteAllText(logPath, $"ERRORE: {e.Message}\nCercato in: {executablePath}");
+            UnityEngine.Debug.LogError(e.Message);
         }
     }
 
