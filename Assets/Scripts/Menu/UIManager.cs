@@ -1,5 +1,5 @@
 using System;
-using System.Collections; // Necessario per la Coroutine (IEnumerator)
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -22,6 +22,11 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Button joinButton;
 
     [SerializeField] private Button hostButtonMainMenu;
+
+    [SerializeField] private Button quitButton;
+
+
+
     [SerializeField] private Button avviaPartitaButton;
 
     [SerializeField] private Sprite copiedSprite; // Trascina qui l'immagine "COPIED!"
@@ -42,6 +47,8 @@ public class UIManager : MonoBehaviour
         joinButton.onClick.AddListener(ShowClientMenu);
 
         hostButtonMainMenu.onClick.AddListener(ShowSelectionMenu);
+
+        quitButton.onClick.AddListener(quitGame);
         
         // Colleghiamo il tasto copia alla funzione
         if (copyCodeButton != null)
@@ -157,4 +164,9 @@ public class UIManager : MonoBehaviour
     // Ripristiniamo lo sprite originale
     btnImage.sprite = originalSprite;
 }
+
+    private void quitGame()
+    {
+        Application.Quit();
+    }
 }

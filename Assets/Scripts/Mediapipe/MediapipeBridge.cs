@@ -239,8 +239,10 @@ private IEnumerator StartupSequence()
     {
         string logPath = Application.persistentDataPath + "/bridge_log.txt";
         string configPath = Application.streamingAssetsPath + "/conf/config.json";
-        string executablePath = Application.streamingAssetsPath + "/mediapipe-bridge-dist/mediapipe-bridge.bin";
-
+        string bridgeName = Application.platform == RuntimePlatform.WindowsPlayer
+            ? "mediapipe-bridge.exe"
+            : "mediapipe-bridge.bin";
+        string executablePath = Application.streamingAssetsPath + "/mediapipe-bridge-dist/" + bridgeName;
         try
         {
             mpProcess = new System.Diagnostics.Process();

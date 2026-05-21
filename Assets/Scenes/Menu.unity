@@ -3469,7 +3469,7 @@ GameObject:
   - component: {fileID: 640441849}
   - component: {fileID: 640441848}
   m_Layer: 5
-  m_Name: Button
+  m_Name: HostButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3797,7 +3797,7 @@ GameObject:
   - component: {fileID: 753622664}
   - component: {fileID: 753622663}
   m_Layer: 5
-  m_Name: Button (1)
+  m_Name: JoinButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4572,7 +4572,7 @@ GameObject:
   - component: {fileID: 980357873}
   - component: {fileID: 980357872}
   m_Layer: 5
-  m_Name: Button (2)
+  m_Name: QuitButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8612,6 +8612,7 @@ MonoBehaviour:
   joinCodeText: {fileID: 1747627262}
   joinButton: {fileID: 753622663}
   hostButtonMainMenu: {fileID: 640441848}
+  quitButton: {fileID: 980357872}
   avviaPartitaButton: {fileID: 1797246137}
   copiedSprite: {fileID: 21300000, guid: 20822c862fd0d4be997c53164d719926, type: 3}
 --- !u!1 &2136452725
