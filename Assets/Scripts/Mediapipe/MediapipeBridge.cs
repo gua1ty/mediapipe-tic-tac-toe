@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Collections;
 using UnityEngine;
 using System;
@@ -237,22 +237,36 @@ private IEnumerator StartupSequence()
 
     private void StartMediapipeProcess()
     {
-        string logPath = Application.persistentDataPath + "/bridge_log.txt";
-        string configPath = Application.streamingAssetsPath + "/conf/config.json";
+        // Usiamo Path.Combine e GetFullPath per assicurarci che Windows usi i backslash (\) corretti
+        string logPath = System.IO.Path.Combine(Application.persistentDataPath, "bridge_log.txt");
+        string configPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.streamingAssetsPath, "conf", "config.json"));
+        
         string bridgeName = Application.platform == RuntimePlatform.WindowsPlayer
             ? "mediapipe-bridge.exe"
             : "mediapipe-bridge.bin";
-        string executablePath = Application.streamingAssetsPath + "/mediapipe-bridge-dist/" + bridgeName;
+            
+        string executablePath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.streamingAssetsPath, "mediapipe-bridge-dist", bridgeName));
+
         try
         {
             mpProcess = new System.Diagnostics.Process();
             mpProcess.StartInfo.FileName = executablePath;
+            
+            // Passiamo il percorso assoluto racchiuso rigorosamente tra virgolette
             mpProcess.StartInfo.Arguments = $"\"{configPath}\"";
-            mpProcess.StartInfo.WorkingDirectory = System.IO.Path.GetDirectoryName(executablePath);
+            
+            // FIX FONDAMENTALE: Impostiamo la cartella di lavoro su StreamingAssets
+            mpProcess.StartInfo.WorkingDirectory = Application.streamingAssetsPath;
+            
             mpProcess.StartInfo.UseShellExecute = false;
+            
+            // Opzionale: decommenta la riga qui sotto se NON vuoi che appaia la finestra nera cmd di Windows
+            // mpProcess.StartInfo.CreateNoWindow = true; 
+            
             mpProcess.Start();
 
-            System.IO.File.WriteAllText(logPath, $"Executable: {executablePath}\nConfig: {configPath}\n");
+            // Scriviamo nel log i percorsi formattati per debug
+            System.IO.File.WriteAllText(logPath, $"Executable: {executablePath}\nConfig: {configPath}\nWorkingDir: {mpProcess.StartInfo.WorkingDirectory}");
         }
         catch (Exception e)
         {
